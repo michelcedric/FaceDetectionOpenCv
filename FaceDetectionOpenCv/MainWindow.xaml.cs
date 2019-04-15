@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -18,12 +19,12 @@ namespace FaceDetectionOpenCv
     /// </summary>
     public partial class MainWindow : Window
     {
-        private const int Frame = 5;  
+        private const int Frame = 2;
         private CascadeClassifier _frontFaceCascadeClassifier;
         private CascadeClassifier _profileFaceCascadeClassifier;
         private VideoCapture _capture;
         private Bitmap _cameraCapture;
-        private int _counter = Frame;    
+        private int _counter = Frame;
         List<Rectangle> _rectangles = new List<Rectangle>();
 
         public MainWindow()
@@ -53,7 +54,7 @@ namespace FaceDetectionOpenCv
 
                 foreach (var faceDetection in frontFacesDetection.Concat(profileFaceDetection))
                 {
-                    var rectangle = new Rectangle(faceDetection.X - 20, faceDetection.Y - 20, faceDetection.Width + 40, faceDetection.Height + 40);
+                    var rectangle = new Rectangle(faceDetection.X - 25, faceDetection.Y - 25, faceDetection.Width + 50, faceDetection.Height + 50);
                     _rectangles.Add(rectangle);
 
                     grayframe.Draw(rectangle, new Bgr(Color.Transparent), 0);
@@ -73,6 +74,8 @@ namespace FaceDetectionOpenCv
                     _rectangles = new List<Rectangle>();
                 }
             }
+            //little break to reduce cpu usage
+            Thread.Sleep(5);
         }
 
         public Bitmap CameraCapture
