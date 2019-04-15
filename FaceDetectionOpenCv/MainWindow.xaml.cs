@@ -2,13 +2,13 @@
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Timer = System.Timers.Timer;
 
 namespace FaceDetectionOpenCv
 {
@@ -18,25 +18,61 @@ namespace FaceDetectionOpenCv
     /// </summary>
     public partial class MainWindow : Window
     {
-        private Timer _captureTimer;
-        private CascadeClassifier _cascadeClassifier;
-        private CascadeClassifier _cascadeClassifier2;
+        private const int Frame = 5;  
+        private CascadeClassifier _frontFaceCascadeClassifier;
+        private CascadeClassifier _profileFaceCascadeClassifier;
         private VideoCapture _capture;
         private Bitmap _cameraCapture;
+        private int _counter = Frame;    
+        List<Rectangle> _rectangles = new List<Rectangle>();
 
         public MainWindow()
         {
             InitializeComponent();
             var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CascadeClassifier");
-            _cascadeClassifier = new CascadeClassifier(Path.Combine(path, "haarcascade_frontalface_alt2.xml"));
-            _cascadeClassifier2 = new CascadeClassifier(Path.Combine(path, "haarcascade_profileface.xml"));
+            _frontFaceCascadeClassifier = new CascadeClassifier(Path.Combine(path, "haarcascade_frontalface_alt2.xml"));
+            _profileFaceCascadeClassifier = new CascadeClassifier(Path.Combine(path, "haarcascade_profileface.xml"));
+
             _capture = new VideoCapture();
-            _capture.SetCaptureProperty(CapProp.Fps, 30);
-            _capture.SetCaptureProperty(CapProp.FrameHeight, 450);
-            _capture.SetCaptureProperty(CapProp.FrameWidth, 370);
-            _captureTimer = new Timer(75);
-            _captureTimer.Elapsed += _captureTimer_Elapsed;
-            _captureTimer.Start();
+            _capture.ImageGrabbed += _capture_ImageGrabbed;
+            _capture.Start();
+        }
+
+        private void _capture_ImageGrabbed(object sender, EventArgs e)
+        {
+            _counter++;
+            Mat imageFrame = new Mat();
+            _capture.Retrieve(imageFrame);
+
+            var grayframe = imageFrame.ToImage<Bgr, byte>();
+
+            if (_counter % Frame == 0)
+            {
+                var frontFacesDetection = _frontFaceCascadeClassifier.DetectMultiScale(grayframe);
+                var profileFaceDetection = _profileFaceCascadeClassifier.DetectMultiScale(grayframe);
+
+                foreach (var faceDetection in frontFacesDetection.Concat(profileFaceDetection))
+                {
+                    var rectangle = new Rectangle(faceDetection.X - 20, faceDetection.Y - 20, faceDetection.Width + 40, faceDetection.Height + 40);
+                    _rectangles.Add(rectangle);
+
+                    grayframe.Draw(rectangle, new Bgr(Color.Transparent), 0);
+                    _counter = 0;
+                }
+                CameraCapture = grayframe.ToBitmap();
+            }
+            else
+            {
+                if (_rectangles.Any())
+                {
+                    foreach (var item in _rectangles)
+                    {
+                        grayframe.Draw(item, new Bgr(Color.Transparent), 0);
+                    }
+                    CameraCapture = grayframe.ToBitmap();
+                    _rectangles = new List<Rectangle>();
+                }
+            }
         }
 
         public Bitmap CameraCapture
@@ -51,15 +87,15 @@ namespace FaceDetectionOpenCv
 
         private void _captureTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
-            _captureTimer.Stop();
+            //_captureTimer.Stop();
             using (var imageFrame = _capture.QueryFrame())
             {
                 if (imageFrame != null)
                 {
                     var grayframe = imageFrame.ToImage<Bgr, byte>();
 
-                    var faces = _cascadeClassifier.DetectMultiScale(grayframe, 1.1, 10, System.Drawing.Size.Empty);
-                    var faces2 = _cascadeClassifier2.DetectMultiScale(grayframe, 1.1, 10, System.Drawing.Size.Empty);
+                    var faces = _frontFaceCascadeClassifier.DetectMultiScale(grayframe, 1.1, 10, System.Drawing.Size.Empty);
+                    var faces2 = _profileFaceCascadeClassifier.DetectMultiScale(grayframe, 1.1, 10, System.Drawing.Size.Empty);
 
                     foreach (var face in faces.Concat(faces2))
                     {
@@ -67,21 +103,21 @@ namespace FaceDetectionOpenCv
 
                         //uncommmented to hide face but is not yet stable
 
-                        //Image<Bgr, Byte> temp = grayframe.Copy(rectangle); //copy the image data from the face
-                        //temp = temp.PyrDown().PyrDown().PyrDown().PyrUp().PyrUp().PyrUp(); //very simple blurring effect
-                        //grayframe.ROI = rectangle; //set the ROI to the same size as temp
-                        /////if the program hangs here check to make sure the 
-                        /////ImageFrame.ROI is the same size of temp.
-                        //if (grayframe.ROI.Size.Equals(temp.Size))
-                        //{
-                        //    CvInvoke.cvCopy(temp, grayframe, new IntPtr(0)); //copy the temp to the frame 
+                        Image<Bgr, Byte> temp = grayframe.Copy(rectangle); //copy the image data from the face
+                        temp = temp.PyrDown().PyrDown().PyrDown().PyrUp().PyrUp().PyrUp(); //very simple blurring effect
+                        grayframe.ROI = rectangle; //set the ROI to the same size as temp
+                                                   /////if the program hangs here check to make sure the 
+                                                   /////ImageFrame.ROI is the same size of temp.
+                                                   //if (grayframe.ROI.Size.Equals(temp.Size))
+                                                   //{
+                                                   //CvInvoke.cvCopy(temp, grayframe, new IntPtr(0)); //copy the temp to the frame 
+                                                   //}
+                                                   //else
+                                                   //{
+                        temp = temp.Resize(grayframe.ROI.Size.Width, grayframe.ROI.Size.Height, Inter.Area);
+                        CvInvoke.cvCopy(temp, grayframe, new IntPtr(0)); //copy the temp to the frame 
                         //}
-                        //else
-                        //{
-                        //    temp = temp.Resize(grayframe.ROI.Size.Width, grayframe.ROI.Size.Height, Inter.Area);
-                        //    CvInvoke.cvCopy(temp, grayframe, new IntPtr(0)); //copy the temp to the frame 
-                        //}
-                        //grayframe.ROI = Rectangle.Empty;
+                        grayframe.ROI = Rectangle.Empty;
 
                         grayframe.Draw(rectangle, new Bgr(Color.Transparent), 0);
 
@@ -90,10 +126,25 @@ namespace FaceDetectionOpenCv
 
                 }
             }
-            _captureTimer.Start();
+            //_captureTimer.Start();
         }
 
 
+        //Image<Bgr, Byte> temp = grayframe.Copy(rectangle); //copy the image data from the face
+        //temp = temp.PyrDown().PyrUp(); //very simple blurring effect
+        //grayframe.ROI = rectangle; //set the ROI to the same size as temp
+        /////if the program hangs here check to make sure the 
+        ///////ImageFrame.ROI is the same size of temp.
+        //if (grayframe.ROI.Size.Equals(temp.Size))
+        //{
+        //    CvInvoke.cvCopy(temp, grayframe, new IntPtr(0)); //copy the temp to the frame 
+        //}
+        //else
+        //{
+        //    temp = temp.Resize(grayframe.ROI.Size.Width, grayframe.ROI.Size.Height, Inter.Area);
+        //    CvInvoke.cvCopy(temp, grayframe, new IntPtr(0)); //copy the temp to the frame 
+        //}
+        //grayframe.ROI = Rectangle.Empty;
 
         private BitmapImage BitmapToImageSource(Bitmap bitmap)
         {
